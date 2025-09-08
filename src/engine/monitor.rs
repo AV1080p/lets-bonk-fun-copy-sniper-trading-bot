@@ -4,10 +4,8 @@ use std::{collections::HashSet, time::Instant};
 #[derive(Clone, Debug, PartialEq, Eq, Copy)]
 pub enum InstructionType {
     PumpMint,
-    PumpBuy,
-    PumpSell,
-    PumpSwapBuy,
-    PumpSwapSell
+    RaydiumBuy,
+    RaydiumSell
 }
 
 #[derive(Clone, Debug)]
