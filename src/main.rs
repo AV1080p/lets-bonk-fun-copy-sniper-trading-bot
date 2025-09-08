@@ -1,12 +1,15 @@
 /*
- * Copy Trading Bot with PumpSwap Notification Mode
+ * Let's Bonk Dot Fun Sniper Bot
  * 
- * Changes made:
- * - Modified PumpSwap buy/sell logic to only send notifications without executing transactions
- * - Transaction processing now runs in separate tokio tasks to ensure main monitoring continues
- * - Added placeholder for future selling strategy implementation
- * - PumpFun protocol functionality remains unchanged
- * - Added caching and batch RPC calls for improved performance
+ * A high-performance Rust-based sniper trading bot for Let's Bonk Dot Fun platform
+ * using Raydium Launchpad integration.
+ * 
+ * Features:
+ * - Real-time transaction monitoring using Yellowstone gRPC
+ * - Automated copy trading from target wallets
+ * - Raydium Launchpad integration for Let's Bonk Dot Fun tokens
+ * - Built-in selling strategies and risk management
+ * - Performance optimized for high-frequency trading
  */
 
 use anchor_client::solana_sdk::signature::Signer;
@@ -621,8 +624,7 @@ async fn main() {
     let protocol_preference = std::env::var("PROTOCOL_PREFERENCE")
         .ok()
         .map(|p| match p.to_lowercase().as_str() {
-            "pumpfun" => SwapProtocol::PumpFun,
-            "pumpswap" => SwapProtocol::PumpSwap,
+            "raydium" => SwapProtocol::RaydiumLaunchpad,
             _ => SwapProtocol::Auto,
         })
         .unwrap_or(SwapProtocol::Auto);

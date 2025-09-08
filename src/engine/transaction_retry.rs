@@ -49,207 +49,129 @@ pub async fn verify_transaction_with_retry(
     logger: &Logger,
     max_retries: u32,
 ) -> Result<bool> {
-    let start_time = Instant::now();
+    let mut retry_count = 0;
     
-    for attempt in 1..=max_retries {
-        if start_time.elapsed() > VERIFICATION_TIMEOUT {
-            logger.log(format!("Transaction verification timeout after {:?}", start_time.elapsed()).yellow().to_string());
-            return Ok(false);
-        }
-
-        logger.log(format!("Verifying transaction attempt {}/{}: {}", attempt, max_retries, signature));
-
-        match app_state.rpc_nonblocking_client.get_signature_statuses(&[*signature]).await {
-            Ok(result) => {
-                if let Some(status_opt) = result.value.get(0) {
-                    if let Some(status) = status_opt {
-                        if status.err.is_none() {
-                            logger.log(format!("✅ Transaction verified successfully: {}", signature).green().to_string());
-                            return Ok(true);
-                        } else {
-                            logger.log(format!("❌ Transaction failed with error: {:?}", status.err).red().to_string());
-                            return Ok(false);
-                        }
-                    }
+    while retry_count < max_retries {
+        match app_state.rpc_client.get_signature_status(signature).await {
+            Ok(Some(status)) => {
+                if status.confirmation_status == Some(solana_transaction_status::TransactionConfirmationStatus::Confirmed) {
+                    return Ok(true);
+                } else if status.confirmation_status == Some(solana_transaction_status::TransactionConfirmationStatus::Finalized) {
+                    return Ok(true);
+                } else {
+                    logger.log(format!("Transaction not confirmed yet, retry {}/{}", retry_count + 1, max_retries));
+                    retry_count += 1;
+                    sleep(RETRY_DELAY).await;
                 }
             }
+            Ok(None) => {
+                logger.log(format!("Transaction not found, retry {}/{}", retry_count + 1, max_retries));
+                retry_count += 1;
+                sleep(RETRY_DELAY).await;
+            }
             Err(e) => {
-                logger.log(format!("RPC error during verification attempt {}: {}", attempt, e).yellow().to_string());
+                logger.log(format!("Error verifying transaction: {}, retry {}/{}", e, retry_count + 1, max_retries));
+                retry_count += 1;
+                sleep(RETRY_DELAY).await;
             }
         }
-
-        if attempt < max_retries {
-            sleep(Duration::from_millis(1000)).await;
-        }
     }
-
-    logger.log(format!("Transaction verification failed after {} attempts", max_retries).red().to_string());
-    Ok(false)
-}
-
-/// Execute a selling transaction with retry and Jupiter fallback
-pub async fn execute_sell_with_retry_and_fallback(
-    trade_info: &TradeInfoFromToken,
-    sell_config: SwapConfig,
-    app_state: Arc<AppState>,
-    logger: &Logger,
-) -> Result<SellTransactionResult> {
-    let token_mint = &trade_info.mint;
-    logger.log(format!("🔄 Starting sell transaction with retry for token: {}", token_mint).cyan().to_string());
-
-    // First, try the normal selling flow with retries
-    match execute_normal_sell_with_retry(trade_info, sell_config.clone(), app_state.clone(), logger).await {
-        Ok(result) => {
-            if result.success {
-                logger.log(format!("✅ Normal sell succeeded on attempt {}", result.attempt_count).green().to_string());
-                return Ok(result);
-            }
-        }
-        Err(e) => {
-            logger.log(format!("❌ Normal sell attempts failed: {}", e).yellow().to_string());
-        }
-    }
-
-    // If normal selling failed after retries, try Jupiter fallback
-    logger.log(format!("🚀 Attempting Jupiter API fallback for token: {}", token_mint).purple().to_string());
     
-    match execute_jupiter_fallback_sell(trade_info, &sell_config, app_state.clone(), logger).await {
-        Ok(signature) => {
-            logger.log(format!("✅ Jupiter fallback sell succeeded: {}", signature).green().to_string());
-            Ok(SellTransactionResult {
-                success: true,
-                signature: Some(signature),
-                error: None,
-                used_jupiter_fallback: true,
-                attempt_count: MAX_RETRIES + 1,
-            })
-        }
-        Err(e) => {
-            logger.log(format!("❌ Jupiter fallback sell failed: {}", e).red().to_string());
-            Ok(SellTransactionResult {
-                success: false,
-                signature: None,
-                error: Some(format!("All sell attempts failed. Last error: {}", e)),
-                used_jupiter_fallback: true,
-                attempt_count: MAX_RETRIES + 1,
-            })
-        }
-    }
+    Err(anyhow!("Transaction verification failed after {} retries", max_retries))
 }
 
-/// Execute normal selling flow with retry logic
-async fn execute_normal_sell_with_retry(
+/// Execute sell transaction with comprehensive retry logic
+pub async fn execute_sell_with_retry(
     trade_info: &TradeInfoFromToken,
     sell_config: SwapConfig,
     app_state: Arc<AppState>,
     logger: &Logger,
 ) -> Result<SellTransactionResult> {
-    let mut last_error = String::new();
-
-    for attempt in 1..=MAX_RETRIES {
-        logger.log(format!("🔄 Normal sell attempt {}/{} for token: {}", attempt, MAX_RETRIES, trade_info.mint).cyan().to_string());
-
-        match execute_single_sell_attempt(trade_info, sell_config.clone(), app_state.clone(), logger).await {
+    let mut attempt_count = 0;
+    let mut last_error = None;
+    
+    // Try Raydium Launchpad first
+    while attempt_count < MAX_RETRIES {
+        attempt_count += 1;
+        logger.log(format!("Sell attempt {}/{} for token {}", attempt_count, MAX_RETRIES, trade_info.mint).yellow().to_string());
+        
+        match execute_raydium_sell_attempt(trade_info, sell_config.clone(), app_state.clone(), logger).await {
             Ok(signature) => {
+                logger.log(format!("Raydium sell transaction sent: {}", signature).green().to_string());
+                
                 // Verify the transaction
-                match verify_transaction_with_retry(&signature, app_state.clone(), logger, 5).await {
+                match verify_transaction_with_retry(&signature, app_state.clone(), logger, 3).await {
                     Ok(verified) => {
                         if verified {
-                            logger.log(format!("✅ Normal sell succeeded on attempt {}: {}", attempt, signature).green().to_string());
+                            logger.log("Raydium sell transaction verified successfully".green().to_string());
                             return Ok(SellTransactionResult {
                                 success: true,
                                 signature: Some(signature),
                                 error: None,
                                 used_jupiter_fallback: false,
-                                attempt_count: attempt,
+                                attempt_count,
                             });
                         } else {
-                            last_error = format!("Transaction verification failed for signature: {}", signature);
-                            logger.log(format!("❌ Attempt {} failed: {}", attempt, last_error).yellow().to_string());
+                            last_error = Some("Transaction verification failed".to_string());
                         }
                     }
                     Err(e) => {
-                        last_error = format!("Verification error: {}", e);
-                        logger.log(format!("❌ Attempt {} failed: {}", attempt, last_error).yellow().to_string());
+                        last_error = Some(format!("Transaction verification error: {}", e));
                     }
                 }
             }
             Err(e) => {
-                last_error = e.to_string();
-                logger.log(format!("❌ Attempt {} failed: {}", attempt, last_error).yellow().to_string());
+                last_error = Some(format!("Raydium sell failed: {}", e));
+                logger.log(format!("Raydium sell attempt {} failed: {}", attempt_count, e).red().to_string());
             }
         }
-
-        if attempt < MAX_RETRIES {
-            logger.log(format!("⏳ Waiting {:?} before retry...", RETRY_DELAY).yellow().to_string());
+        
+        if attempt_count < MAX_RETRIES {
             sleep(RETRY_DELAY).await;
         }
     }
-
-    Err(anyhow!("Normal sell failed after {} attempts. Last error: {}", MAX_RETRIES, last_error))
-}
-
-/// Execute a single sell attempt using the existing selling logic
-async fn execute_single_sell_attempt(
-    trade_info: &TradeInfoFromToken,
-    sell_config: SwapConfig,
-    app_state: Arc<AppState>,
-    logger: &Logger,
-) -> Result<Signature> {
-    // Determine which DEX to use based on trade info
-    match trade_info.dex_type {
-        crate::engine::transaction_parser::DexType::PumpFun => {
-            execute_pumpfun_sell_attempt(trade_info, sell_config, app_state, logger).await
+    
+    // If Raydium failed, try Jupiter as fallback
+    logger.log("Raydium sell failed, trying Jupiter fallback...".yellow().to_string());
+    
+    match execute_jupiter_sell_attempt(trade_info, sell_config, app_state.clone(), logger).await {
+        Ok(signature) => {
+            logger.log(format!("Jupiter sell transaction sent: {}", signature).green().to_string());
+            
+            // Verify the transaction
+            match verify_transaction_with_retry(&signature, app_state.clone(), logger, 3).await {
+                Ok(verified) => {
+                    if verified {
+                        logger.log("Jupiter sell transaction verified successfully".green().to_string());
+                        return Ok(SellTransactionResult {
+                            success: true,
+                            signature: Some(signature),
+                            error: None,
+                            used_jupiter_fallback: true,
+                            attempt_count,
+                        });
+                    } else {
+                        last_error = Some("Jupiter transaction verification failed".to_string());
+                    }
+                }
+                Err(e) => {
+                    last_error = Some(format!("Jupiter transaction verification error: {}", e));
+                }
+            }
         }
-        crate::engine::transaction_parser::DexType::PumpSwap => {
-            execute_pumpswap_sell_attempt(trade_info, sell_config, app_state, logger).await
-        }
-        crate::engine::transaction_parser::DexType::RaydiumLaunchpad => {
-            execute_raydium_sell_attempt(trade_info, sell_config, app_state, logger).await
-        }
-        _ => {
-            // Default to PumpFun for unknown protocols
-            execute_pumpfun_sell_attempt(trade_info, sell_config, app_state, logger).await
+        Err(e) => {
+            last_error = Some(format!("Jupiter sell failed: {}", e));
+            logger.log(format!("Jupiter sell failed: {}", e).red().to_string());
         }
     }
-}
-
-/// Execute PumpFun sell attempt
-async fn execute_pumpfun_sell_attempt(
-    trade_info: &TradeInfoFromToken,
-    sell_config: SwapConfig,
-    app_state: Arc<AppState>,
-    logger: &Logger,
-) -> Result<Signature> {
-    let pump = crate::dex::pump_fun::Pump::new(
-        app_state.rpc_nonblocking_client.clone(),
-        app_state.rpc_client.clone(),
-        app_state.wallet.clone(),
-    );
-
-    let (keypair, instructions, _price) = pump.build_swap_from_parsed_data(trade_info, sell_config).await
-        .map_err(|e| anyhow!("Failed to build PumpFun swap: {}", e))?;
-
-    let recent_blockhash = crate::services::blockhash_processor::BlockhashProcessor::get_latest_blockhash().await
-        .ok_or_else(|| anyhow!("Failed to get recent blockhash"))?;
-
-    let signatures = crate::core::tx::new_signed_and_send_with_landing_mode(
-        crate::common::config::TransactionLandingMode::Normal,
-        &app_state,
-        recent_blockhash,
-        &keypair,
-        instructions,
-        logger,
-    ).await.map_err(|e| anyhow!("Failed to send transaction: {}", e))?;
-
-    if signatures.is_empty() {
-        return Err(anyhow!("No transaction signature returned"));
-    }
-
-    // Parse the string signature to Signature type
-    let signature = signatures[0].parse::<Signature>()
-        .map_err(|e| anyhow!("Failed to parse signature: {}", e))?;
-    Ok(signature)
+    
+    Ok(SellTransactionResult {
+        success: false,
+        signature: None,
+        error: last_error,
+        used_jupiter_fallback: true,
+        attempt_count,
+    })
 }
 
 /// Execute Raydium sell attempt
@@ -259,7 +181,7 @@ async fn execute_raydium_sell_attempt(
     app_state: Arc<AppState>,
     logger: &Logger,
 ) -> Result<Signature> {
-    let raydium = crate::dex::raydium_launchpad::Raydium::new(
+    let raydium = crate::dex::raydium_launchpad::RaydiumLaunchpad::new(
         app_state.wallet.clone(),
         Some(app_state.rpc_client.clone()),
         Some(app_state.rpc_nonblocking_client.clone()),
@@ -271,130 +193,76 @@ async fn execute_raydium_sell_attempt(
     let recent_blockhash = crate::services::blockhash_processor::BlockhashProcessor::get_latest_blockhash().await
         .ok_or_else(|| anyhow!("Failed to get recent blockhash"))?;
 
-    let signatures = crate::core::tx::new_signed_and_send_zeroslot(
+    let signature = crate::core::tx::new_signed_and_send_zeroslot(
         app_state.zeroslot_rpc_client.clone(),
         recent_blockhash,
         &keypair,
         instructions,
         logger,
-    ).await.map_err(|e| anyhow!("Failed to send transaction: {}", e))?;
+    ).await
+    .map_err(|e| anyhow!("Failed to send Raydium transaction: {}", e))?;
 
-    if signatures.is_empty() {
-        return Err(anyhow!("No transaction signature returned"));
+    if signature.is_empty() {
+        return Err(anyhow!("No signature returned from Raydium transaction"));
     }
 
-    // Parse the string signature to Signature type
-    let signature = signatures[0].parse::<Signature>()
+    let signature = Signature::from_str(&signature[0])
         .map_err(|e| anyhow!("Failed to parse signature: {}", e))?;
     Ok(signature)
 }
 
-/// Execute PumpSwap sell attempt
-async fn execute_pumpswap_sell_attempt(
+/// Execute Jupiter sell attempt as fallback
+async fn execute_jupiter_sell_attempt(
     trade_info: &TradeInfoFromToken,
     sell_config: SwapConfig,
     app_state: Arc<AppState>,
     logger: &Logger,
 ) -> Result<Signature> {
-    let pump_swap = crate::dex::pump_swap::PumpSwap::new(
-        app_state.wallet.clone(),
-        Some(app_state.rpc_client.clone()),
-        Some(app_state.rpc_nonblocking_client.clone()),
-    );
-
-    let (keypair, instructions, _price) = pump_swap.build_swap_from_parsed_data(trade_info, sell_config).await
-        .map_err(|e| anyhow!("Failed to build PumpSwap swap: {}", e))?;
-
-    let recent_blockhash = crate::services::blockhash_processor::BlockhashProcessor::get_latest_blockhash().await
-        .ok_or_else(|| anyhow!("Failed to get recent blockhash"))?;
-
-    let signatures = crate::core::tx::new_signed_and_send_with_landing_mode(
-        crate::common::config::TransactionLandingMode::Normal,
-        &app_state,
-        recent_blockhash,
-        &keypair,
-        instructions,
-        logger,
-    ).await.map_err(|e| anyhow!("Failed to send transaction: {}", e))?;
-
-    if signatures.is_empty() {
-        return Err(anyhow!("No transaction signature returned"));
-    }
-
-    let signature = signatures[0].parse::<Signature>()
-        .map_err(|e| anyhow!("Failed to parse signature: {}", e))?;
+    let jupiter_client = JupiterClient::new();
+    
+    // Get wallet public key
+    let wallet_pubkey = app_state.wallet.try_pubkey()
+        .map_err(|_| anyhow!("Failed to get wallet public key"))?;
+    
+    // Get token mint
+    let token_mint = Pubkey::from_str(&trade_info.mint)
+        .map_err(|_| anyhow!("Invalid token mint"))?;
+    
+    // Get associated token account
+    let token_account = get_associated_token_address(&wallet_pubkey, &token_mint);
+    
+    // Get SOL mint for WSOL
+    let sol_mint = Pubkey::from_str("So11111111111111111111111111111111111111112")
+        .map_err(|_| anyhow!("Invalid SOL mint"))?;
+    
+    // Get WSOL account
+    let wsol_account = get_associated_token_address(&wallet_pubkey, &sol_mint);
+    
+    // Calculate amount to sell (use a percentage of the token amount)
+    let amount_to_sell = (trade_info.token_change * 0.5) as u64; // Sell 50% of tokens
+    
+    // Get quote from Jupiter
+    let quote = jupiter_client.get_quote(
+        &token_mint,
+        &sol_mint,
+        amount_to_sell,
+        sell_config.slippage_bps,
+    ).await
+    .map_err(|e| anyhow!("Failed to get Jupiter quote: {}", e))?;
+    
+    // Get swap transaction from Jupiter
+    let swap_transaction = jupiter_client.get_swap_transaction(
+        &quote,
+        &wallet_pubkey,
+        &token_account,
+        &wsol_account,
+    ).await
+    .map_err(|e| anyhow!("Failed to get Jupiter swap transaction: {}", e))?;
+    
+    // Send the transaction
+    let signature = app_state.rpc_client.send_and_confirm_transaction(&swap_transaction)
+        .await
+        .map_err(|e| anyhow!("Failed to send Jupiter transaction: {}", e))?;
+    
     Ok(signature)
 }
-
-/// Execute Jupiter API fallback sell
-async fn execute_jupiter_fallback_sell(
-    trade_info: &TradeInfoFromToken,
-    sell_config: &SwapConfig,
-    app_state: Arc<AppState>,
-    logger: &Logger,
-) -> Result<Signature> {
-    logger.log("🚀 Executing Jupiter API fallback sell".purple().to_string());
-
-    // Get wallet pubkey
-    let wallet_pubkey = app_state.wallet.try_pubkey()
-        .map_err(|e| anyhow!("Failed to get wallet pubkey: {}", e))?;
-
-    // Get token mint pubkey
-    let token_pubkey = trade_info.mint.parse::<Pubkey>()
-        .map_err(|e| anyhow!("Invalid token mint address: {}", e))?;
-
-    // Get associated token account
-    let ata = get_associated_token_address(&wallet_pubkey, &token_pubkey);
-
-    // Get current token balance
-    let token_account = app_state.rpc_nonblocking_client.get_token_account(&ata).await
-        .map_err(|e| anyhow!("Failed to get token account: {}", e))?
-        .ok_or_else(|| anyhow!("Token account not found"))?;
-
-    let token_amount = token_account.token_amount.amount.parse::<u64>()
-        .map_err(|e| anyhow!("Failed to parse token amount: {}", e))?;
-
-    if token_amount == 0 {
-        return Err(anyhow!("No tokens to sell"));
-    }
-
-    // Apply sell percentage based on amount_in field (which represents percentage for sells)
-    let amount_to_sell = if sell_config.amount_in >= 1.0 {
-        token_amount
-    } else {
-        ((token_amount as f64) * sell_config.amount_in) as u64
-    };
-
-    logger.log(format!("💱 Selling {} tokens via Jupiter API", amount_to_sell));
-
-    // Initialize Jupiter API client
-            let jupiter_client = JupiterClient::new(app_state.rpc_nonblocking_client.clone());
-
-    // Execute sell transaction via Jupiter API (this handles signing and sending)
-    let (signature_str, expected_sol) = jupiter_client.sell_token(
-        &trade_info.mint,
-        amount_to_sell,
-        (sell_config.slippage as u32 * 100) as u64, // Convert to basis points as u64
-        &wallet_pubkey,
-    ).await.map_err(|e| anyhow!("Jupiter API sell failed: {}", e))?;
-
-    logger.log(format!("💰 Expected SOL from sale: {:.6}", expected_sol));
-    
-    // Parse the signature string into a Signature type
-    let signature = signature_str.parse::<anchor_client::solana_sdk::signature::Signature>()
-        .map_err(|e| anyhow!("Failed to parse signature: {}", e))?;
-
-    logger.log(format!("✅ Jupiter transaction sent: {}", signature).green().to_string());
-
-    // Verify the transaction
-    match verify_transaction_with_retry(&signature, app_state, logger, 5).await {
-        Ok(verified) => {
-            if verified {
-                Ok(signature)
-            } else {
-                Err(anyhow!("Jupiter transaction verification failed"))
-            }
-        }
-        Err(e) => Err(anyhow!("Jupiter transaction verification error: {}", e))
-    }
-} 

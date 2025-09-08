@@ -81,9 +81,9 @@ pub enum ClientError {
 
     InvalidData(String),
 
-    PumpFunBuy(String),
+    RaydiumBuy(String),
 
-    PumpFunSell(String),
+    RaydiumSell(String),
 
     Timeout(String, String),
 
@@ -119,8 +119,8 @@ impl std::fmt::Display for ClientError {
             }
             Self::Send(msg, details) => write!(f, "Send error: {}, details: {}", msg, details),
             Self::Other(msg) => write!(f, "Other error: {}", msg),
-            Self::PumpFunBuy(msg) => write!(f, "PumpFun buy error: {}", msg),
-            Self::PumpFunSell(msg) => write!(f, "PumpFun sell error: {}", msg),
+            Self::RaydiumBuy(msg) => write!(f, "Raydium buy error: {}", msg),
+            Self::RaydiumSell(msg) => write!(f, "Raydium sell error: {}", msg),
             Self::InvalidData(msg) => write!(f, "Invalid data: {}", msg),
             Self::Timeout(msg, details) => {
                 write!(f, "Operation timed out: {}, details: {}", msg, details)
@@ -147,8 +147,8 @@ impl std::error::Error for ClientError {
             Self::Subscribe(_, _) => None,
             Self::Send(_, _) => None,
             Self::Other(_) => None,
-            Self::PumpFunBuy(_) => None,
-            Self::PumpFunSell(_) => None,
+            Self::RaydiumBuy(_) => None,
+            Self::RaydiumSell(_) => None,
             Self::Timeout(_, _) => None,
             Self::Duplicate(_) => None,
             Self::InvalidEventType => None,
