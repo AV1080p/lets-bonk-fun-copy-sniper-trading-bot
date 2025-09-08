@@ -1,4 +1,4 @@
-# Let's Bonk Dot Fun Sniper Bot
+# Lets Bonk Dot Fun Sniper Bot
 
 This is a high-performance Rust-based sniper trading bot that monitors and executes trades on the Let's Bonk Dot Fun platform using Raydium Launchpad. The bot uses advanced transaction monitoring to detect and execute trades in real-time, giving you an edge in the market.
 

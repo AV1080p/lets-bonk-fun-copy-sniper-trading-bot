@@ -942,7 +942,7 @@ impl SellingEngine {
         // Calculate price using the same logic as transaction_parser.rs
         let price = match trade_info.dex_type {
             DexType::RaydiumLaunchpad => {
-                // PumpFun: virtual_sol_reserves / virtual_token_reserves
+                // Raydium Launchpad: virtual_sol_reserves / virtual_token_reserves
                 if trade_info.virtual_token_reserves > 0 {
                     (trade_info.virtual_sol_reserves as f64 * 1_000_000_000.0) / 
                     (trade_info.virtual_token_reserves as f64) / 1_000_000_000.0
@@ -951,7 +951,7 @@ impl SellingEngine {
                 }
             },
             DexType::RaydiumLaunchpad => {
-                // PumpSwap: use the price from trade_info (already calculated correctly)
+                // Raydium Launchpad: use the price from trade_info (already calculated correctly)
                 trade_info.price as f64 / 1_000_000_000.0
             },
             DexType::RaydiumLaunchpad => {
@@ -988,7 +988,7 @@ impl SellingEngine {
                 }
             },
             SwapProtocol::RaydiumLaunchpad => {
-                // For PumpFun, use virtual SOL reserves as proxy for liquidity
+                // For Raydium Launchpad, use virtual SOL reserves as proxy for liquidity
                 trade_info.virtual_sol_reserves as f64 / 1e9 // Convert lamports to SOL
             },
             _ => 0.0,
@@ -1278,7 +1278,7 @@ impl SellingEngine {
                 if let Some(metrics) = TOKEN_METRICS.get(token_mint) {
                     Ok(metrics.current_price)
                 } else {
-                    Err(anyhow!("No metrics available for PumpFun token"))
+                    Err(anyhow!("No metrics available for Raydium Launchpad token"))
                 }
             },
             SwapProtocol::RaydiumLaunchpad => {
@@ -1481,12 +1481,12 @@ impl SellingEngine {
             SwapProtocol::RaydiumLaunchpad => DexType::RaydiumLaunchpad,
             SwapProtocol::RaydiumLaunchpad => DexType::RaydiumLaunchpad,
             SwapProtocol::Auto => {
-                // For Auto protocol, default to PumpFun as it's most common
-                self.logger.log("Auto protocol detected, defaulting to PumpFun".yellow().to_string());
+                // For Auto protocol, default to Raydium Launchpad as it's most common
+                self.logger.log("Auto protocol detected, defaulting to Raydium Launchpad".yellow().to_string());
                 DexType::RaydiumLaunchpad
             },
             SwapProtocol::Unknown => {
-                self.logger.log("Unknown protocol detected, defaulting to PumpFun".yellow().to_string());
+                self.logger.log("Unknown protocol detected, defaulting to Raydium Launchpad".yellow().to_string());
                 DexType::RaydiumLaunchpad
             },
         };
@@ -1537,7 +1537,7 @@ impl SellingEngine {
                 }
             },
             SwapProtocol::RaydiumLaunchpad => {
-                // For PumpFun, use cached metrics instead of RPC calls
+                // For Raydium Launchpad, use cached metrics instead of RPC calls
                 // Calculate estimated SOL amount and use reasonable defaults for reserves
                 let est_sol_amount = (metrics.current_price * token_amount * 1_000_000_000.0) as u64;
                 
@@ -1546,8 +1546,8 @@ impl SellingEngine {
                 let virtual_sol_reserves = (virtual_token_reserves as f64 * metrics.current_price) as u64;
                 
                 (
-                    None, // PumpFun doesn't use pool field
-                    None, // No pool_info for PumpFun
+                    None, // Raydium Launchpad doesn't use pool field
+                    None, // No pool_info for Raydium Launchpad
                     Some(virtual_token_reserves),
                     Some(virtual_sol_reserves),
                     Some(est_sol_amount),
@@ -1573,16 +1573,16 @@ impl SellingEngine {
                 )
             },
             SwapProtocol::Auto | SwapProtocol::Unknown => {
-                // For Auto/Unknown protocols, use PumpFun defaults
-                self.logger.log("Using PumpFun defaults for Auto/Unknown protocol".yellow().to_string());
+                // For Auto/Unknown protocols, use Raydium Launchpad defaults
+                self.logger.log("Using Raydium Launchpad defaults for Auto/Unknown protocol".yellow().to_string());
                 
                 let est_sol_amount = (metrics.current_price * token_amount * 1_000_000_000.0) as u64;
                 let virtual_token_reserves = 1_000_000_000_000; // 1 trillion token units
                 let virtual_sol_reserves = (virtual_token_reserves as f64 * metrics.current_price) as u64;
                 
                 (
-                    None, // PumpFun doesn't use pool field
-                    None, // No pool_info for PumpFun
+                    None, // Raydium Launchpad doesn't use pool field
+                    None, // No pool_info for Raydium Launchpad
                     Some(virtual_token_reserves),
                     Some(virtual_sol_reserves),
                     Some(est_sol_amount),
@@ -1862,8 +1862,6 @@ impl SellingEngine {
 
         // Protocol string for logging
         let protocol_str = match sell_protocol {
-            SwapProtocol::RaydiumLaunchpad => "PumpSwap",
-            SwapProtocol::RaydiumLaunchpad => "PumpFun",
             SwapProtocol::RaydiumLaunchpad => "RaydiumLaunchpad",
             _ => "Unknown",
         };
@@ -1871,9 +1869,9 @@ impl SellingEngine {
         // Execute emergency sell based on protocol
         let result = match sell_protocol {
             SwapProtocol::RaydiumLaunchpad => {
-                self.logger.log("Using PumpFun protocol for emergency sell".red().to_string());
+                self.logger.log("Using Raydium Launchpad protocol for emergency sell".red().to_string());
                 
-                let pump = crate::dex::pump_fun::RaydiumLaunchpad::new(
+                let pump = crate::dex::raydium_launchpad::RaydiumLaunchpad::new(
                     self.app_state.rpc_nonblocking_client.clone(),
                     self.app_state.rpc_client.clone(),
                     self.app_state.wallet.clone(),
@@ -1889,7 +1887,7 @@ impl SellingEngine {
                                 return Err(anyhow!("Failed to get recent blockhash"));
                             }
                         };
-                        self.logger.log(format!("Generated emergency PumpFun sell instruction at price: {}", price));
+                        self.logger.log(format!("Generated emergency Raydium Launchpad sell instruction at price: {}", price));
                         // Execute with zeroslot for copy selling
                         match crate::core::tx::new_signed_and_send_zeroslot(
                             self.app_state.zeroslot_rpc_client.clone(),
@@ -1904,7 +1902,7 @@ impl SellingEngine {
                                 }
                                 
                                 let signature = &signatures[0];
-                                self.logger.log(format!("Emergency PumpFun sell transaction sent: {}", signature).green().to_string());
+                                self.logger.log(format!("Emergency Raydium Launchpad sell transaction sent: {}", signature).green().to_string());
                                 
                                 Ok(signature.to_string())
                             },
@@ -1915,15 +1913,15 @@ impl SellingEngine {
                         }
                     },
                     Err(e) => {
-                        self.logger.log(format!("Failed to build emergency PumpFun sell instruction: {}", e).red().to_string());
+                        self.logger.log(format!("Failed to build emergency Raydium Launchpad sell instruction: {}", e).red().to_string());
                         Err(anyhow!("Failed to build emergency sell instruction: {}", e))
                     }
                 }
             },
             SwapProtocol::RaydiumLaunchpad => {
-                self.logger.log("Using PumpSwap protocol for emergency sell".red().to_string());
+                self.logger.log("Using Raydium Launchpad protocol for emergency sell".red().to_string());
                 
-                let pump_swap = crate::dex::pump_swap::RaydiumLaunchpad::new(
+                let pump_swap = crate::dex::raydium_launchpad::RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
@@ -1939,7 +1937,7 @@ impl SellingEngine {
                                 return Err(anyhow!("Failed to get recent blockhash"));
                             }
                         };
-                        self.logger.log(format!("Generated emergency PumpSwap sell instruction at price: {}", price));
+                        self.logger.log(format!("Generated emergency Raydium Launchpad sell instruction at price: {}", price));
                         // Execute with zeroslot for copy selling
                         match crate::core::tx::new_signed_and_send_zeroslot(
                             self.app_state.zeroslot_rpc_client.clone(),
@@ -1954,7 +1952,7 @@ impl SellingEngine {
                                 }
                                 
                                 let signature = &signatures[0];
-                                self.logger.log(format!("Emergency PumpSwap sell transaction sent: {}", signature).green().to_string());
+                                self.logger.log(format!("Emergency Raydium Launchpad sell transaction sent: {}", signature).green().to_string());
                                 
                                 Ok(signature.to_string())
                             },
@@ -1965,7 +1963,7 @@ impl SellingEngine {
                         }
                     },
                     Err(e) => {
-                        self.logger.log(format!("Failed to build emergency PumpSwap sell instruction: {}", e).red().to_string());
+                        self.logger.log(format!("Failed to build emergency Raydium Launchpad sell instruction: {}", e).red().to_string());
                         Err(anyhow!("Failed to build emergency sell instruction: {}", e))
                     }
                 }
@@ -2021,9 +2019,9 @@ impl SellingEngine {
                 }
             },
             SwapProtocol::Auto | SwapProtocol::Unknown => {
-                self.logger.log("Auto/Unknown protocol detected, defaulting to PumpFun for emergency sell".yellow().to_string());
+                self.logger.log("Auto/Unknown protocol detected, defaulting to Raydium Launchpad for emergency sell".yellow().to_string());
                 
-                let pump = crate::dex::pump_fun::RaydiumLaunchpad::new(
+                let pump = crate::dex::raydium_launchpad::RaydiumLaunchpad::new(
                     self.app_state.rpc_nonblocking_client.clone(),
                     self.app_state.rpc_client.clone(),
                     self.app_state.wallet.clone(),
@@ -2038,7 +2036,7 @@ impl SellingEngine {
                                 return Err(anyhow!("Failed to get recent blockhash"));
                             }
                         };
-                        self.logger.log(format!("Generated emergency PumpFun sell instruction at price: {}", price));
+                        self.logger.log(format!("Generated emergency Raydium Launchpad sell instruction at price: {}", price));
                         match crate::core::tx::new_signed_and_send_zeroslot(
                             self.app_state.zeroslot_rpc_client.clone(),
                             recent_blockhash,
@@ -2052,7 +2050,7 @@ impl SellingEngine {
                                 }
                                 
                                 let signature = &signatures[0];
-                                self.logger.log(format!("Emergency PumpFun (Auto/Unknown) sell transaction sent: {}", signature).green().to_string());
+                                self.logger.log(format!("Emergency Raydium Launchpad (Auto/Unknown) sell transaction sent: {}", signature).green().to_string());
                                 
                                 Ok(signature.to_string())
                             },
@@ -2063,7 +2061,7 @@ impl SellingEngine {
                         }
                     },
                     Err(e) => {
-                        self.logger.log(format!("Failed to build emergency PumpFun sell instruction: {}", e).red().to_string());
+                        self.logger.log(format!("Failed to build emergency Raydium Launchpad sell instruction: {}", e).red().to_string());
                         Err(anyhow!("Failed to build emergency sell instruction: {}", e))
                     }
                 }
@@ -2230,12 +2228,12 @@ impl SellingEngine {
                 }
             },
             DexType::RaydiumLaunchpad | _ => {
-                // For PumpFun and others, fall back to virtual reserves calculation
+                // For Raydium Launchpad and others, fall back to virtual reserves calculation
                 let virtual_sol = trade_info.virtual_sol_reserves;
                 let virtual_token = trade_info.virtual_token_reserves;
                 
                 if virtual_token != 0 {
-                    // Apply same scaling as transaction parser and PumpFun methods
+                    // Apply same scaling as transaction parser and Raydium Launchpad methods
                     // But return as f64 for selling strategy calculations
                     let scaled_price = ((virtual_sol as f64) * 1_000_000_000.0) / (virtual_token as f64);
                     Some(scaled_price / 1_000_000_000.0) // Convert back to unscaled f64
