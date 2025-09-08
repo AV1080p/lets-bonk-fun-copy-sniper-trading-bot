@@ -175,21 +175,6 @@ impl Config {
     }
 }
 
-//pumpfun
-pub const LOG_INSTRUCTION: &str = "initialize2";
-pub const PUMP_LOG_INSTRUCTION: &str = "MintTo";
-pub const PUMP_FUN_BUY_LOG_INSTRUCTION: &str = "Buy";
-pub const PUMP_FUN_PROGRAM_DATA_PREFIX: &str = "Program data: G3KpTd7rY3Y";
-pub const PUMP_FUN_SELL_LOG_INSTRUCTION: &str = "Sell";
-pub const PUMP_FUN_BUY_OR_SELL_PROGRAM_DATA_PREFIX: &str = "Program data: vdt/007mYe";
-
-//TODO: pumpswap
-pub const PUMP_SWAP_LOG_INSTRUCTION: &str = "Migerate";
-pub const PUMP_SWAP_BUY_LOG_INSTRUCTION: &str = "Buy";
-pub const PUMP_SWAP_BUY_PROGRAM_DATA_PREFIX: &str = "PProgram data: Z/RSHyz1d3";
-pub const PUMP_SWAP_SELL_LOG_INSTRUCTION: &str = "Sell";
-pub const PUMP_SWAP_SELL_PROGRAM_DATA_PREFIX: &str = "Program data: Pi83CqUD3Cp";
-
 //TODO: raydium launchpad
 pub const RAYDIUM_LAUNCHPAD_LOG_INSTRUCTION: &str = "MintTo";
 pub const RAYDIUM_LAUNCHPAD_PROGRAM_DATA_PREFIX: &str = "Program data: G3KpTd7rY3Y";

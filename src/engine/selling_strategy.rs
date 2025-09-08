@@ -21,15 +21,12 @@ use crate::common::{
 };
 use crate::engine::transaction_parser::{TradeInfoFromToken, DexType};
 use crate::engine::swap::{SwapDirection, SwapProtocol, SwapInType};
-use crate::dex::pump_fun::Pump;
-use crate::dex::pump_swap::PumpSwap;
+use crate::dex::raydium_launchpad::RaydiumLaunchpad;
 
 // Implement conversion from SwapProtocol to DexType
 impl From<SwapProtocol> for DexType {
     fn from(protocol: SwapProtocol) -> Self {
         match protocol {
-            SwapProtocol::PumpFun => DexType::PumpFun,
-            SwapProtocol::PumpSwap => DexType::PumpSwap,
             SwapProtocol::RaydiumLaunchpad => DexType::RaydiumLaunchpad,
             SwapProtocol::Auto | SwapProtocol::Unknown => DexType::Unknown,
         }
@@ -675,7 +672,7 @@ impl TokenManager {
                                         let protocol = if let Some(metrics) = TOKEN_METRICS.get(&token_mint_clone) {
                                             metrics.protocol.clone()
                                         } else {
-                                            SwapProtocol::PumpFun
+                                            SwapProtocol::RaydiumLaunchpad
                                         };
                                         
                                         // Use unified emergency sell for whale emergency selling
@@ -700,7 +697,7 @@ impl TokenManager {
                                         let protocol = if let Some(metrics) = TOKEN_METRICS.get(&token_mint_clone) {
                                             metrics.protocol.clone()
                                         } else {
-                                            SwapProtocol::PumpFun
+                                            SwapProtocol::RaydiumLaunchpad
                                         };
                                         
                                         if let Err(e) = engine_clone.unified_emergency_sell(&token_mint_clone, false, Some(&trade_info), Some(protocol)).await {
@@ -944,7 +941,7 @@ impl SellingEngine {
         
         // Calculate price using the same logic as transaction_parser.rs
         let price = match trade_info.dex_type {
-            DexType::PumpFun => {
+            DexType::RaydiumLaunchpad => {
                 // PumpFun: virtual_sol_reserves / virtual_token_reserves
                 if trade_info.virtual_token_reserves > 0 {
                     (trade_info.virtual_sol_reserves as f64 * 1_000_000_000.0) / 
@@ -953,7 +950,7 @@ impl SellingEngine {
                     0.0
                 }
             },
-            DexType::PumpSwap => {
+            DexType::RaydiumLaunchpad => {
                 // PumpSwap: use the price from trade_info (already calculated correctly)
                 trade_info.price as f64 / 1_000_000_000.0
             },
@@ -979,8 +976,8 @@ impl SellingEngine {
 
         // Get current liquidity based on protocol
         let current_liquidity = match self.app_state.protocol_preference {
-            SwapProtocol::PumpSwap => {
-                let pump_swap = PumpSwap::new(
+            SwapProtocol::RaydiumLaunchpad => {
+                let pump_swap = RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
@@ -990,7 +987,7 @@ impl SellingEngine {
                     Err(_) => 0.0,
                 }
             },
-            SwapProtocol::PumpFun => {
+            SwapProtocol::RaydiumLaunchpad => {
                 // For PumpFun, use virtual SOL reserves as proxy for liquidity
                 trade_info.virtual_sol_reserves as f64 / 1e9 // Convert lamports to SOL
             },
@@ -1112,8 +1109,8 @@ impl SellingEngine {
 
         // Determine protocol from trade info
         let protocol = match trade_info.dex_type {
-            DexType::PumpFun => SwapProtocol::PumpFun,
-            DexType::PumpSwap => SwapProtocol::PumpSwap,
+            DexType::RaydiumLaunchpad => SwapProtocol::RaydiumLaunchpad,
+            DexType::RaydiumLaunchpad => SwapProtocol::RaydiumLaunchpad,
             _ => self.app_state.protocol_preference.clone(),
         };
 
@@ -1276,7 +1273,7 @@ impl SellingEngine {
         };
 
         match protocol {
-            SwapProtocol::PumpFun => {
+            SwapProtocol::RaydiumLaunchpad => {
                 // Use cached current price from TOKEN_METRICS instead of RPC call
                 if let Some(metrics) = TOKEN_METRICS.get(token_mint) {
                     Ok(metrics.current_price)
@@ -1284,8 +1281,8 @@ impl SellingEngine {
                     Err(anyhow!("No metrics available for PumpFun token"))
                 }
             },
-            SwapProtocol::PumpSwap => {
-                let pump_swap = PumpSwap::new(
+            SwapProtocol::RaydiumLaunchpad => {
+                let pump_swap = RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
@@ -1480,17 +1477,17 @@ impl SellingEngine {
         
         // Create a DexType based on protocol
         let dex_type = match protocol_to_use {
-            SwapProtocol::PumpSwap => DexType::PumpSwap,
-            SwapProtocol::PumpFun => DexType::PumpFun,
+            SwapProtocol::RaydiumLaunchpad => DexType::RaydiumLaunchpad,
+            SwapProtocol::RaydiumLaunchpad => DexType::RaydiumLaunchpad,
             SwapProtocol::RaydiumLaunchpad => DexType::RaydiumLaunchpad,
             SwapProtocol::Auto => {
                 // For Auto protocol, default to PumpFun as it's most common
                 self.logger.log("Auto protocol detected, defaulting to PumpFun".yellow().to_string());
-                DexType::PumpFun
+                DexType::RaydiumLaunchpad
             },
             SwapProtocol::Unknown => {
                 self.logger.log("Unknown protocol detected, defaulting to PumpFun".yellow().to_string());
-                DexType::PumpFun
+                DexType::RaydiumLaunchpad
             },
         };
 
@@ -1503,8 +1500,8 @@ impl SellingEngine {
             _sol_amount,
             coin_creator
         ) = match protocol_to_use {
-            SwapProtocol::PumpSwap => {
-                let pump_swap = PumpSwap::new(
+            SwapProtocol::RaydiumLaunchpad => {
+                let pump_swap = RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
@@ -1539,7 +1536,7 @@ impl SellingEngine {
                     }
                 }
             },
-            SwapProtocol::PumpFun => {
+            SwapProtocol::RaydiumLaunchpad => {
                 // For PumpFun, use cached metrics instead of RPC calls
                 // Calculate estimated SOL amount and use reasonable defaults for reserves
                 let est_sol_amount = (metrics.current_price * token_amount * 1_000_000_000.0) as u64;
@@ -1810,7 +1807,7 @@ impl SellingEngine {
             if let Some(metrics) = crate::engine::selling_strategy::TOKEN_METRICS.get(token_mint) {
                 metrics.protocol.clone()
             } else {
-                SwapProtocol::PumpFun // Default fallback
+                SwapProtocol::RaydiumLaunchpad // Default fallback
             }
         });
 
@@ -1827,8 +1824,8 @@ impl SellingEngine {
             // Use provided parsed data
             TradeInfoFromToken {
                 dex_type: match sell_protocol {
-                    SwapProtocol::PumpSwap => crate::engine::transaction_parser::DexType::PumpSwap,
-                    SwapProtocol::PumpFun => crate::engine::transaction_parser::DexType::PumpFun,
+                    SwapProtocol::RaydiumLaunchpad => crate::engine::transaction_parser::DexType::RaydiumLaunchpad,
+                    SwapProtocol::RaydiumLaunchpad => crate::engine::transaction_parser::DexType::RaydiumLaunchpad,
                     SwapProtocol::RaydiumLaunchpad => crate::engine::transaction_parser::DexType::RaydiumLaunchpad,
                     _ => crate::engine::transaction_parser::DexType::Unknown,
                 },
@@ -1865,18 +1862,18 @@ impl SellingEngine {
 
         // Protocol string for logging
         let protocol_str = match sell_protocol {
-            SwapProtocol::PumpSwap => "PumpSwap",
-            SwapProtocol::PumpFun => "PumpFun",
+            SwapProtocol::RaydiumLaunchpad => "PumpSwap",
+            SwapProtocol::RaydiumLaunchpad => "PumpFun",
             SwapProtocol::RaydiumLaunchpad => "RaydiumLaunchpad",
             _ => "Unknown",
         };
 
         // Execute emergency sell based on protocol
         let result = match sell_protocol {
-            SwapProtocol::PumpFun => {
+            SwapProtocol::RaydiumLaunchpad => {
                 self.logger.log("Using PumpFun protocol for emergency sell".red().to_string());
                 
-                let pump = crate::dex::pump_fun::Pump::new(
+                let pump = crate::dex::pump_fun::RaydiumLaunchpad::new(
                     self.app_state.rpc_nonblocking_client.clone(),
                     self.app_state.rpc_client.clone(),
                     self.app_state.wallet.clone(),
@@ -1923,10 +1920,10 @@ impl SellingEngine {
                     }
                 }
             },
-            SwapProtocol::PumpSwap => {
+            SwapProtocol::RaydiumLaunchpad => {
                 self.logger.log("Using PumpSwap protocol for emergency sell".red().to_string());
                 
-                let pump_swap = crate::dex::pump_swap::PumpSwap::new(
+                let pump_swap = crate::dex::pump_swap::RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
@@ -2026,7 +2023,7 @@ impl SellingEngine {
             SwapProtocol::Auto | SwapProtocol::Unknown => {
                 self.logger.log("Auto/Unknown protocol detected, defaulting to PumpFun for emergency sell".yellow().to_string());
                 
-                let pump = crate::dex::pump_fun::Pump::new(
+                let pump = crate::dex::pump_fun::RaydiumLaunchpad::new(
                     self.app_state.rpc_nonblocking_client.clone(),
                     self.app_state.rpc_client.clone(),
                     self.app_state.wallet.clone(),
@@ -2224,7 +2221,7 @@ impl SellingEngine {
                     None
                 }
             },
-            DexType::PumpSwap => {
+            DexType::RaydiumLaunchpad => {
                 // Use the price calculated by the parser
                 if trade_info.price > 0 {
                     Some(trade_info.price as f64 / 1_000_000_000.0)
@@ -2232,7 +2229,7 @@ impl SellingEngine {
                     None
                 }
             },
-            DexType::PumpFun | _ => {
+            DexType::RaydiumLaunchpad | _ => {
                 // For PumpFun and others, fall back to virtual reserves calculation
                 let virtual_sol = trade_info.virtual_sol_reserves;
                 let virtual_token = trade_info.virtual_token_reserves;
