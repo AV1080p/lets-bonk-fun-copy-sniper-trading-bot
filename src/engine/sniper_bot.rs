@@ -53,8 +53,6 @@ use crate::engine::transaction_parser::{DexType, TradeInfoFromToken};
 use crate::engine::selling_strategy::{TokenTrackingInfo as SellingTokenTrackingInfo, TokenMetrics};
 use crate::engine::transaction_retry;
 use dashmap::DashMap;
-use crate::dex::pump_fun::PUMP_FUN_PROGRAM;
-use crate::dex::pump_swap::PUMP_SWAP_PROGRAM;
 use crate::dex::raydium_launchpad::RAYDIUM_LAUNCHPAD_PROGRAM;
 use chrono::Timelike;
 
@@ -719,16 +717,6 @@ pub async fn execute_buy(
     
     // Get token amount and SOL cost from trade_info
     let (_amount_in, _token_amount) = match trade_info.dex_type {
-        transaction_parser::DexType::PumpSwap => {
-            let sol_amount = trade_info.sol_change.abs();
-            let token_amount = trade_info.token_change.abs();
-            (sol_amount, token_amount)
-        },
-        transaction_parser::DexType::PumpFun => {
-            let sol_amount = trade_info.sol_change.abs();
-            let token_amount = trade_info.token_change.abs();
-            (sol_amount, token_amount)
-        },
         transaction_parser::DexType::RaydiumLaunchpad => {
             let sol_amount = trade_info.sol_change.abs();
             let token_amount = trade_info.token_change.abs();
@@ -741,8 +729,6 @@ pub async fn execute_buy(
     
     // Protocol string for notifications
     let _protocol_str = match protocol {
-        SwapProtocol::PumpSwap => "PumpSwap",
-        SwapProtocol::PumpFun => "PumpFun",
         SwapProtocol::RaydiumLaunchpad => "RaydiumLaunchpad",
         _ => "Unknown",
     };
@@ -2355,8 +2341,6 @@ pub async fn execute_sell(
     
     // Protocol string for notifications
     let _protocol_str = match protocol {
-        SwapProtocol::PumpSwap => "PumpSwap",
-        SwapProtocol::PumpFun => "PumpFun",
         SwapProtocol::RaydiumLaunchpad => "RaydiumLaunchpad",
         _ => "Unknown",
     };

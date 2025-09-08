@@ -29,10 +29,6 @@ pub enum SwapInType {
 
 #[derive(ValueEnum, Debug, Clone, Deserialize, PartialEq)]
 pub enum SwapProtocol {
-    #[serde(rename = "pumpfun")]
-    PumpFun,
-    #[serde(rename = "pumpswap")]
-    PumpSwap,
     #[serde(rename = "raydium")]
     RaydiumLaunchpad,
     #[serde(rename = "auto")]
