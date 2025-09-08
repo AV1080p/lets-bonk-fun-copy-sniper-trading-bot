@@ -15,6 +15,78 @@ The bot specifically tracks `buy` and `sell` transactions on Raydium Launchpad f
 - **Performance Optimization** - Efficient async processing with tokio for high-throughput transaction handling
 - **Reliable Error Recovery** - Automatic reconnection and retry mechanisms for uninterrupted operation
 
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph "External Services"
+        YG[Yellowstone gRPC<br/>Transaction Feed]
+        RL[Raydium Launchpad<br/>DEX]
+        TG[Telegram Bot<br/>Notifications]
+    end
+    
+    subgraph "Sniper Bot Core"
+        subgraph "Monitoring Layer"
+            TM[Transaction Monitor<br/>Real-time Detection]
+            TP[Transaction Parser<br/>Decode & Analyze]
+        end
+        
+        subgraph "Trading Engine"
+            CT[Copy Trading<br/>Execute Trades]
+            SS[Selling Strategy<br/>Profit/Loss Management]
+            TR[Transaction Retry<br/>Error Recovery]
+        end
+        
+        subgraph "DEX Integration"
+            RLH[Raydium Launchpad Handler<br/>Buy/Sell Operations]
+        end
+    end
+    
+    subgraph "Configuration"
+        ENV[Environment Variables<br/>Trading Parameters]
+        TARGET[Target Wallets<br/>Monitor Addresses]
+    end
+    
+    subgraph "Data Flow"
+        YG -->|Transaction Stream| TM
+        TM -->|Raw Transaction Data| TP
+        TP -->|Parsed Trade Info| CT
+        CT -->|Trade Execution| RLH
+        RLH -->|Buy/Sell Orders| RL
+        CT -->|Sell Triggers| SS
+        SS -->|Sell Orders| RLH
+        TR -->|Retry Failed Trades| RLH
+        CT -->|Notifications| TG
+        ENV -->|Configuration| CT
+        TARGET -->|Wallet Addresses| TM
+    end
+    
+    subgraph "Trading Flow"
+        START([Bot Starts]) --> CONNECT[Connect to Yellowstone gRPC]
+        CONNECT --> MONITOR[Monitor Target Wallets]
+        MONITOR --> DETECT{Transaction Detected?}
+        DETECT -->|Yes| PARSE[Parse Transaction Data]
+        DETECT -->|No| MONITOR
+        PARSE --> VALIDATE{Valid Trade?}
+        VALIDATE -->|Yes| EXECUTE[Execute Copy Trade]
+        VALIDATE -->|No| MONITOR
+        EXECUTE --> SUCCESS{Trade Successful?}
+        SUCCESS -->|Yes| NOTIFY[Send Telegram Notification]
+        SUCCESS -->|No| RETRY[Retry with Error Recovery]
+        RETRY --> EXECUTE
+        NOTIFY --> MONITOR
+    end
+    
+    style YG fill:#e1f5fe
+    style RL fill:#f3e5f5
+    style TG fill:#e8f5e8
+    style TM fill:#fff3e0
+    style TP fill:#fff3e0
+    style CT fill:#fce4ec
+    style SS fill:#fce4ec
+    style RLH fill:#f1f8e9
+```
+
 ## Who is it for?
 
 - Bot users looking for the fastest transaction feed possible for Let's Bonk Dot Fun trading
