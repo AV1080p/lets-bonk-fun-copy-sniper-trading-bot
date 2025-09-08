@@ -977,12 +977,12 @@ impl SellingEngine {
         // Get current liquidity based on protocol
         let current_liquidity = match self.app_state.protocol_preference {
             SwapProtocol::RaydiumLaunchpad => {
-                let pump_swap = RaydiumLaunchpad::new(
+                let raydium = RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
                 );
-                match pump_swap.get_pool_liquidity(token_mint).await {
+                match raydium.get_pool_liquidity(token_mint).await {
                     Ok(liquidity) => liquidity,
                     Err(_) => 0.0,
                 }
@@ -1282,13 +1282,13 @@ impl SellingEngine {
                 }
             },
             SwapProtocol::RaydiumLaunchpad => {
-                let pump_swap = RaydiumLaunchpad::new(
+                let raydium = RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
                 );
                 
-                pump_swap.get_token_price(token_mint).await
+                raydium.get_token_price(token_mint).await
             },
             SwapProtocol::RaydiumLaunchpad => {
                 // For RaydiumLaunchpad, fall back to stored metrics price
@@ -1501,12 +1501,12 @@ impl SellingEngine {
             coin_creator
         ) = match protocol_to_use {
             SwapProtocol::RaydiumLaunchpad => {
-                let pump_swap = RaydiumLaunchpad::new(
+                let raydium = RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
                 );
-                match pump_swap.get_pool_info(token_mint).await {
+                match raydium.get_pool_info(token_mint).await {
                     Ok((pool_id, base_mint, quote_mint, base_reserve, quote_reserve)) => {
                         // Convert price to estimated SOL amount
                         let est_sol_amount = (metrics.current_price * token_amount * 1_000_000_000.0) as u64;
@@ -1604,7 +1604,7 @@ impl SellingEngine {
             timestamp,
             is_buy: false, // We're analyzing for sell
             price: (metrics.current_price * 1_000_000_000.0) as u64, // Convert to lamports
-            is_reverse_when_pump_swap: false,
+            is_reverse: false,
             coin_creator,
             sol_change: 0.0,
             token_change: token_amount,
@@ -1836,7 +1836,7 @@ impl SellingEngine {
                 timestamp: data.timestamp,
                 is_buy: false,
                 price: data.price,
-                is_reverse_when_pump_swap: data.is_reverse_when_pump_swap,
+                is_reverse: data.is_reverse,
                 coin_creator: data.coin_creator.clone(),
                 sol_change: data.sol_change,
                 token_change: token_amount,
@@ -1921,13 +1921,13 @@ impl SellingEngine {
             SwapProtocol::RaydiumLaunchpad => {
                 self.logger.log("Using Raydium Launchpad protocol for emergency sell".red().to_string());
                 
-                let pump_swap = crate::dex::raydium_launchpad::RaydiumLaunchpad::new(
+                let raydium = crate::dex::raydium_launchpad::RaydiumLaunchpad::new(
                     self.app_state.wallet.clone(),
                     Some(self.app_state.rpc_client.clone()),
                     Some(self.app_state.rpc_nonblocking_client.clone()),
                 );
                 
-                match pump_swap.build_swap_from_parsed_data(&emergency_trade_info, emergency_config).await {
+                match raydium.build_swap_from_parsed_data(&emergency_trade_info, emergency_config).await {
                     Ok((keypair, instructions, price)) => {
                         // Get recent blockhash from the processor
                         let recent_blockhash = match crate::services::blockhash_processor::BlockhashProcessor::get_latest_blockhash().await {
